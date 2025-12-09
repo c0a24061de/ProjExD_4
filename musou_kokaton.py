@@ -139,6 +139,7 @@ class Bomb(pg.sprite.Sprite):
         self.rect.centerx = emy.rect.centerx
         self.rect.centery = emy.rect.centery+emy.rect.height//2
         self.speed = 6
+        self.state = "active"  # <- 磁場パルス用に追加
 
     def update(self):
         """
@@ -315,6 +316,31 @@ class Shield(pg.sprite.Sprite):
             self.kill()
 
     
+class EMP(pg.sprite.Sprite):
+    def __init__(self, emys: pg.sprite.Group, bombs: pg.sprite.Group, screen: pg.Surface):
+        super().__init__()
+        self.life = 3  # 3フレーム表示（0.05秒程度）
+
+        # 半透明黄色の矩形（画面全体）
+        self.image = pg.Surface((WIDTH, HEIGHT))
+        self.image.fill((255, 255, 0))
+        self.image.set_alpha(80)
+        self.rect = self.image.get_rect()
+
+        # 敵機の無効化処理
+        for emy in emys:
+            emy.interval = float("inf")  # 爆弾を投下できなくする
+            emy.image = pg.transform.laplacian(emy.image)  # 見た目変化
+
+        # 爆弾の無効化処理
+        for bomb in bombs:
+            bomb.speed *= 0.5  # 速度半減
+            bomb.state = "inactive"  # 無効化状態
+
+    def update(self):
+        self.life -= 1
+        if self.life < 0:
+            self.kill()  # 表示終了
 
 
 def main():
@@ -330,6 +356,7 @@ def main():
     emys = pg.sprite.Group()
     skill_g = pg.sprite.Group()
     shields = pg.sprite.Group()
+    emps = pg.sprite.Group()  # 磁場パルス用に追加
 
     tmr = 0
     clock = pg.time.Clock()
@@ -351,11 +378,19 @@ def main():
                 if score.value >= 200: #200点以上で発動可能
                     score.value -= 200  # 発動コスト200点
                     skill_g.add(gravity_effect()) #こうかとんを中心に重力波発動
+
+            if event.type == pg.KEYDOWN:
+                if event.key == pg.K_e and score.value > 20:  # 磁場パルス発動
+                    score.value -= 20
+                    emps.add(EMP(emys, bombs, screen))
+                if event.key == pg.K_SPACE:  # ビーム発射
+                    beams.add(Beam(bird))
         
         if key_lst[pg.K_s] and score.value >= 50 and len(shields) == 0:  # sキー押下、スコア50以上、他の壁が存在しない時
             score.value -= 50
             shields.add(Shield(bird))
 
+            
         screen.blit(bg_img, [0, 0])
 
         if tmr%200 == 0:  # 200フレームsに1回，敵機を出現させる
@@ -388,6 +423,9 @@ def main():
                 score.value += 1
                 continue
 
+            # 磁場パルスで無効化された爆弾の場合
+            if bomb.state == "inactive":
+                continue
             bird.change_img(8, screen)  # こうかとん悲しみエフェクト
             score.update(screen)
             pg.display.update()
@@ -413,6 +451,8 @@ def main():
         shields.update()
         shields.draw(screen)
         score.update(screen)
+        emps.update()
+        emps.draw(screen)
         pg.display.update()
         tmr += 1
         clock.tick(50)
